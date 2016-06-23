@@ -22,9 +22,16 @@
 #include <iostream>
 #include <iterator>
 #include <algorithm>
+#include <fstream>
+#include <ctime>
+#include <sys/types.h> 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <cstdlib>
+#include <cstring>
+#include <stdlib.h>
+#include <string.h>
 
-#include "opencv2/highgui/highgui.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
 
 #include "tclap/CmdLine.h"
 #include "support/filesystem.h"
@@ -42,13 +49,13 @@ const bool SAVE_LAST_VIDEO_STILL = false;
 const std::string LAST_VIDEO_STILL_LOCATION = "/tmp/laststill.jpg";
 const std::string WEBCAM_PREFIX = "/dev/video";
 MotionDetector motiondetector;
-bool do_motiondetection = true;
+bool do_motiondetection = false;//TODO:change
 
 /** Function Headers */
 bool detectandshow(Alpr* alpr, cv::Mat frame, std::string region, bool writeJson);
 bool is_supported_image(std::string image_file);
 
-bool measureProcessingTime = false;
+bool measureProcessingTime = false;//TODO: change it
 std::string templatePattern;
 
 // This boolean is set to false when the user hits terminates (e.g., CTRL+C )
@@ -57,6 +64,10 @@ bool program_active = true;
 
 int main( int argc, const char** argv )
 {
+
+  time_t now = time(0);
+  printf("start time: %s\n", ctime(&now));
+
   std::vector<std::string> filenames;
   std::string configFile = "";
   bool outputJson = false;
@@ -66,6 +77,9 @@ int main( int argc, const char** argv )
   int topn;
   bool debug_mode = false;
 
+
+
+  // original openalpr
   TCLAP::CmdLine cmd("OpenAlpr Command Line Utility", ' ', Alpr::getVersion());
 
   TCLAP::UnlabeledMultiArg<std::string>  fileArg( "image_file", "Image containing license plates", true, "", "image_file_path"  );
@@ -140,7 +154,13 @@ int main( int argc, const char** argv )
     std::cerr << "Error loading OpenALPR" << std::endl;
     return 1;
   }
-
+  
+  now = time(0);
+  printf("load CUDA time: %s\n", ctime(&now));
+  /////////////// stop point
+  char toStart;
+  
+  
   for (unsigned int i = 0; i < filenames.size(); i++)
   {
     std::string filename = filenames[i];
@@ -180,14 +200,26 @@ int main( int argc, const char** argv )
         return 1;
       }
 
-      while (cap.read(frame))
+	printf("\n\n****************\nCAMERA Ready\nJust press Enter\n");
+      //while (cap.read(frame))//TODO: make once detect
+	char c[1];
+	while(1)
       {
+	printf("wait for read stdin\n");
+	read( 0, c, sizeof(char));
+	printf("ALPR get char %c\n", c[1]);
+	if( c[1] == 't' ) ;
+	else if( c[1] == 'e' ) break;
+	while( !cap.read( frame)) printf("\nnot get frame\n");
         if (framenum == 0)
           motiondetector.ResetMotionDetection(&frame);
         detectandshow(&alpr, frame, "", outputJson);
-        sleep_ms(10);
+        sleep_ms(100);
         framenum++;
+	printf("\nEnter again\n");
       }
+	printf("\nEXIT while loop\n");
+	return 0;
     }
     else if (startsWith(filename, "http://") || startsWith(filename, "https://"))
     {
@@ -244,8 +276,8 @@ int main( int argc, const char** argv )
           if (!outputJson)
             std::cout << "Frame: " << framenum << std::endl;
           
-          if (framenum == 0)
-            motiondetector.ResetMotionDetection(&frame);
+          /*if (framenum == 0)
+            motiondetector.ResetMotionDetection(&frame);*/
           detectandshow(&alpr, frame, "", outputJson);
           //create a 1ms delay
           sleep_ms(1);
@@ -303,7 +335,10 @@ int main( int argc, const char** argv )
       return 1;
     }
   }
+  
 
+  now = time(0);
+  printf("end time: %s.\n", ctime(&now));
   return 0;
 }
 
@@ -318,6 +353,8 @@ bool is_supported_image(std::string image_file)
 bool detectandshow( Alpr* alpr, cv::Mat frame, std::string region, bool writeJson)
 {
 
+
+  printf("\nDEBUG\n");
   timespec startTime;
   getTimeMonotonic(&startTime);
 
@@ -357,9 +394,18 @@ bool detectandshow( Alpr* alpr, cv::Mat frame, std::string region, bool writeJso
       for (int k = 0; k < results.plates[i].topNPlates.size(); k++)
       {
         // Replace the multiline newline character with a dash
-        std::string no_newline = results.plates[i].topNPlates[k].characters;
+        std::string no_newline = results.plates[i].topNPlates[k].characters;/*TODO:make only one result plate*/
         std::replace(no_newline.begin(), no_newline.end(), '\n','-');
-        
+
+	//TODO
+	if( k == 0)
+	{
+		std::cout<< no_newline << std::endl;
+		const char *str = no_newline.c_str();
+		write( 2, str, strlen(str));
+		std::cout << std::endl;
+	}
+
         std::cout << "    - " << no_newline << "\t confidence: " << results.plates[i].topNPlates[k].overall_confidence;
         if (templatePattern.size() > 0 || results.plates[i].regionConfidence > 0)
           std::cout << "\t pattern_match: " << results.plates[i].topNPlates[k].matches_template;
@@ -367,10 +413,10 @@ bool detectandshow( Alpr* alpr, cv::Mat frame, std::string region, bool writeJso
         std::cout << std::endl;
       }
     }
+
+    //output << results.plates[0].topNPlates[0].characters;
   }
-
-
-
+  printf("\nWTF\n");
   return results.plates.size() > 0;
 }
 
